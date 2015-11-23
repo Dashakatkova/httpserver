@@ -1,7 +1,7 @@
 all: compile
 
-compile: clean
-	gcc -o httpserver httpserver.c
+compile:
+	gcc -o httpserver httpserver.c -pthread
 
 clean:
 	rm httpserver
