@@ -8,25 +8,6 @@
 
 #include <sys/queue.h>
 
-struct {
-	char *ext;
-	char *conttype;
-} extensions[] = {
-	{".txt", "text/html"},
-	{".htm", "text/html"},
-	{".html", "text/html"},
-	{".jpg", "text/jpeg"},
-	{".jpeg", "text/jpg"},
-	{".png", "image/png"},
-	{".ico", "image/ico"},
-	{".css", "text/css"},
-	{".js", "text/javascript"},
-	{".php", "text/php"},
-	{".xml", "text/xml"},
-	{".pdf", "application/pdf"},
-	{0, 0}
-};
-
 pthread_t ntid[N];
 pthread_t servtid;
 pthread_mutex_t lock[N];
@@ -67,6 +48,16 @@ void headers(int client, int size, int httpcode, char* content_type) {
 	}
 }
 
+char* getContentType(char* ext) {
+	if (strcmp(ext, ".txt") == 0) return "text/html";
+	if (strcmp(ext, ".htm") == 0 || strcmp(ext, ".html") == 0) return "text/html";
+	if (strcmp(ext, ".jpg") == 0 || strcmp(ext, ".jpeg") == 0) return "image/jpeg";
+	if (strcmp(ext, ".png") == 0) return "image/png";
+	if (strcmp(ext, ".ico") == 0) return "image/ico";
+	if (strcmp(ext, ".css") == 0) return "text/css";
+	if (strcmp(ext, ".pdf") == 0) return "application/pdf";
+	return 0;
+}
 
 void parseFileName(char *line, char **filepath, size_t *len) {
 	char *start = NULL;
@@ -91,15 +82,12 @@ void *handler(void *arg) {
 	FILE *fd;
 	FILE *file;
 
-	// getting handler number
 	int *p = (int *) arg;
 	int k = *p;
 
-	// wait for lock
 	pthread_mutex_lock(&lock[k]);
 	pthread_mutex_unlock(&lock[k]);
 
-	//try opening client descriptor
 	fd = fdopen(cd[k], "r");
 	if (fd == NULL) {
 		printf("error open client descriptor as file \n");
@@ -131,17 +119,7 @@ void *handler(void *arg) {
 			}
 			else {
 				char *fileext = strrchr(filepath, '.');
-				char *content_type = 0;
-				int i = 0;
-				while (extensions[i].ext != 0) {
-					if (strcmp(extensions[i].ext, fileext) == 0) {
-						int n = strlen(extensions[i].conttype);
-						content_type = (char*) malloc(n * sizeof(char));
-						strncpy(content_type, extensions[i].conttype, n);
-						break;
-					}
-					i++;
-				}
+				char *content_type = getContentType(fileext);
 				if (content_type != 0) {
 					fseek(file, 0L, SEEK_END);
 					filesize = ftell(file);
@@ -154,7 +132,6 @@ void *handler(void *arg) {
 							printf("send error \n");
 						}
 					}
-					free(content_type);
 				}
 				else {
 					printf("500 Internal Server Error \n");
@@ -165,19 +142,17 @@ void *handler(void *arg) {
 	close(cd[k]);
 	free(p);
 	cd[k] = -1;
-	puts ("Handler destroyed");
 }
 
 void createThread(int k) {
 	int *m = (int *)malloc(sizeof(int));
 	*m = k;
-	int err = pthread_create(&ntid[k], NULL, handler, (void *) m);
-	if (err != 0) {
-		printf("it's impossible to create a thread %s\n", strerror(err));
+	if (pthread_create(&ntid[k], NULL, handler, (void *) m) != 0) {
+		printf("it's impossible to create a thread\n");
 	}
 }
 
-void *serv(void *arg) {
+void *threadControl(void *arg) {
 	int i;
 	while (1) {
 		i = 0;
@@ -210,7 +185,7 @@ void *serv(void *arg) {
 int main() {
 	int ld = 0;
 	int res = 0;
-	int _cd = 0;
+	int client_d = 0;
 	const int backlog = 10;
 	struct sockaddr_in saddr;
 	struct sockaddr_in caddr;
@@ -230,7 +205,7 @@ int main() {
 		i++;
 	}
 
-	int err = pthread_create(&servtid, NULL, serv, NULL);
+	int err = pthread_create(&servtid, NULL, threadControl, NULL);
 	if (err != 0) {
 		printf("it's impossible to create a thread %s\n", strerror(err));
 	}
@@ -253,15 +228,14 @@ int main() {
 
 	puts("Start");
 	while (1) {
-		_cd = accept(ld, (struct sockaddr *)&caddr, &size_caddr);
-		if (_cd == -1) {
+		client_d = accept(ld, (struct sockaddr *)&caddr, &size_caddr);
+		if (client_d == -1) {
 			printf("accept error \n");
 		}
-
-		printf("client in %d descriptor. Client addr is %d \n", _cd, caddr.sin_addr.s_addr);
+		printf("client in %d descriptor. Client addr is %d \n", client_d, caddr.sin_addr.s_addr);
 
 		qitem = malloc(sizeof(*qitem));
-		qitem->value = _cd;
+		qitem->value = client_d;
 		TAILQ_INSERT_TAIL(&qhead, qitem, entries);
 	}
 	return 0;
